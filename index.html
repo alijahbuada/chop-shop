@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chop Shop</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a sampler faceplate — LCD/video up top, 5x2 pad grid, transport strip, take list */
+:root {
+  --body: #1b1a1d;      /* chassis */
+  --panel: #252328;     /* raised plate */
+  --line: #3a373f;
+  --ink: #ece7df;
+  --dim: #9a948c;
+  --pad: #33302f;       /* unlit pad */
+  --pad-set: #4a3a2a;   /* pad with a cue */
+  --amber: #ff9f3d;     /* lit pad / accent */
+  --rec: #ff4b4b;
+  --lcd: #c9d8a0;       /* LCD readout */
+  --lcd-bg: #141611;
+  --display: "Archivo", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--body); color: var(--ink); font: 15px/1.5 var(--display);
+  padding: 24px max(16px, env(safe-area-inset-left, 0px)) 48px max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 980px; margin: 0 auto; display: grid; gap: 18px; }
+header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+h1 { margin: 0; font-weight: 800; font-size: 1.6rem; letter-spacing: .02em; text-transform: uppercase; }
+h1 span { color: var(--amber); }
+.model { font: 600 .72rem var(--mono); color: var(--dim); letter-spacing: .14em; text-transform: uppercase; }
+
+.loader { display: flex; gap: 8px; }
+.loader input {
+  flex: 1; min-width: 0; background: var(--lcd-bg); color: var(--lcd); border: 1px solid var(--line);
+  border-radius: 6px; padding: 11px 12px; font: 14px var(--mono);
+}
+button {
+  font: 600 .85rem var(--display); color: var(--ink); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 6px; padding: 10px 14px; cursor: pointer; letter-spacing: .03em;
+}
+button:hover { border-color: var(--dim); }
+button:focus-visible, input:focus-visible, .pad:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+button.primary { background: var(--amber); color: #1b1a1d; border-color: var(--amber); }
+
+.deck { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 760px) { .deck { grid-template-columns: 1fr; } }
+
+.screen { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px; display: grid; gap: 10px; }
+.video { position: relative; aspect-ratio: 16/9; max-width: 100%; background: #000; border-radius: 6px; overflow: hidden; }
+.video > div, .video iframe { position: absolute; inset: 0; width: 100%; height: 100%; }
+.shield { position: absolute; inset: 0; z-index: 2; }
+.shield[hidden] { display: none; }
+.empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--dim); font: .85rem var(--mono); text-align: center; padding: 16px; }
+.lcd {
+  background: var(--lcd-bg); color: var(--lcd); border-radius: 6px; padding: 8px 10px;
+  font: 600 .9rem var(--mono); display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  font-variant-numeric: tabular-nums;
+}
+.lcd .msg { color: var(--dim); font-weight: 400; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+label.toggle { display: inline-flex; align-items: center; gap: 6px; font-size: .82rem; color: var(--dim); cursor: pointer; }
+
+.pads { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.pad {
+  position: relative; aspect-ratio: 1; max-width: 100%; border-radius: 8px; background: var(--pad);
+  border: 1px solid var(--line); box-shadow: inset 0 -4px 0 rgba(0,0,0,.35);
+  display: flex; flex-direction: column; justify-content: space-between; padding: 8px;
+  cursor: pointer; user-select: none; -webkit-user-select: none; touch-action: manipulation;
+  transition: background .08s, transform .05s;
+}
+.pad.set { background: var(--pad-set); }
+.pad.hit { background: var(--amber); color: #1b1a1d; transform: translateY(2px); box-shadow: inset 0 -1px 0 rgba(0,0,0,.35), 0 0 18px rgba(255,159,61,.45); }
+.pad.sel { border-color: var(--amber); }
+.pad .key { font: 800 1.25rem var(--display); }
+.pad .t { font: .72rem var(--mono); color: var(--dim); font-variant-numeric: tabular-nums; }
+.pad.hit .t { color: #1b1a1d; }
+.pad.set .t { color: var(--ink); }
+
+.side { display: grid; gap: 14px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: grid; gap: 10px; }
+.card h2 { margin: 0; font: 600 .72rem var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
+.recbtn { display: inline-flex; align-items: center; gap: 8px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--rec); }
+.recording .dot { animation: blink 1s steps(2) infinite; }
+.recording { border-color: var(--rec); color: var(--rec); }
+@keyframes blink { 50% { opacity: .2; } }
+@media (prefers-reduced-motion: reduce) { .recording .dot { animation: none; } .pad { transition: none; } }
+.takes { display: grid; gap: 8px; }
+.take { display: grid; gap: 6px; padding: 10px; background: var(--body); border-radius: 6px; }
+.take .name { font: .8rem var(--mono); display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.take audio { width: 100%; height: 34px; }
+.take a { color: var(--amber); font-weight: 600; text-decoration: none; }
+.help { font-size: .85rem; color: var(--dim); margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+kbd { font: .78rem var(--mono); background: var(--body); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; color: var(--ink); }
+.banner { background: var(--pad-set); border: 1px solid var(--amber); border-radius: 8px; padding: 10px 12px; font-size: .88rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Chop <span>Shop</span></h1>
+    <div class="model">YouTube sampler · 10 pads</div>
+  </header>
+
+  <form class="loader" id="loadForm">
+    <input id="url" type="text" placeholder="Paste a YouTube link" autocomplete="off" spellcheck="false">
+    <button class="primary" type="submit">Load</button>
+  </form>
+
+  <div class="banner" id="focusBanner" hidden>Keyboard went to the video. Click anywhere on the pads to take it back.</div>
+
+  <div class="deck">
+    <div class="screen">
+      <div class="video">
+        <div id="player"></div>
+        <div class="empty" id="empty">Paste a link above to load a video</div>
+        <div class="shield" id="shield" title="Video locked so your keys keep working"></div>
+      </div>
+      <div class="lcd"><span id="clock">00:00.00 / 00:00</span><span class="msg" id="msg">No video loaded</span></div>
+      <div class="row">
+        <button type="button" id="playBtn">Play / Pause</button>
+        <button type="button" id="spreadBtn">Spread 10% marks</button>
+        <button type="button" id="clearBtn">Clear pads</button>
+      </div>
+      <div class="row">
+        <label class="toggle"><input type="checkbox" id="gate"> Hold to play (pause on release)</label>
+        <label class="toggle"><input type="checkbox" id="lock" checked> Lock video (keeps keys working)</label>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="pads" id="pads"></div>
+
+      <div class="card">
+        <h2>Record</h2>
+        <div class="row">
+          <button type="button" class="recbtn" id="recBtn"><span class="dot"></span><span id="recLabel">Record</span></button>
+          <span class="lcd" style="padding:6px 10px" id="recTime">00:00</span>
+        </div>
+        <p class="help" style="padding:0;list-style:none">When Chrome asks what to share, pick <b>This tab</b> and turn on <b>Share tab audio</b>. Stop to get an MP3.</p>
+        <div class="takes" id="takes"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>How to play</h2>
+    <ul class="help">
+      <li><kbd>1</kbd>–<kbd>0</kbd> jump to that pad's cue and play. Tapping a pad works too.</li>
+      <li><kbd>Shift</kbd> + number sets that pad to the current spot. An empty pad also sets itself when hit.</li>
+      <li><kbd>[</kbd> and <kbd>]</kbd> nudge the last pad 0.05s earlier or later. Hold <kbd>Alt</kbd> for 0.01s.</li>
+      <li><kbd>Space</kbd> plays or pauses. <kbd>Backspace</kbd> clears the last pad.</li>
+      <li>Cues save in this browser for each video, so you can come back to a chop.</li>
+    </ul>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js"></script>
+<script>
+const CODES = ['Digit1','Digit2','Digit3','Digit4','Digit5','Digit6','Digit7','Digit8','Digit9','Digit0'];
+const NUMPAD = ['Numpad1','Numpad2','Numpad3','Numpad4','Numpad5','Numpad6','Numpad7','Numpad8','Numpad9','Numpad0'];
+const LABELS = ['1','2','3','4','5','6','7','8','9','0'];
+const $ = id => document.getElementById(id);
+
+let player = null, apiReady = false, videoId = null, pendingId = null;
+let cues = Array(10).fill(null);
+let selected = null;
+const held = new Set();
+
+/* ---------- pads ---------- */
+const padEls = LABELS.map((k, i) => {
+  const el = document.createElement('div');
+  el.className = 'pad'; el.tabIndex = 0;
+  el.innerHTML = `<span class="key">${k}</span><span class="t">empty</span>`;
+  el.addEventListener('pointerdown', e => { e.preventDefault(); window.focus(); hit(i, e.shiftKey); held.add('p' + i); });
+  el.addEventListener('pointerup', () => release('p' + i));
+  el.addEventListener('pointerleave', () => { if (held.has('p' + i)) release('p' + i); });
+  $('pads').appendChild(el);
+  return el;
+});
+
+function fmt(t, withHundredths = true) {
+  if (t == null || isNaN(t)) return '--:--';
+  const m = Math.floor(t / 60), s = t - m * 60;
+  return String(m).padStart(2, '0') + ':' + (withHundredths ? s.toFixed(2).padStart(5, '0') : String(Math.floor(s)).padStart(2, '0'));
+}
+function renderPads() {
+  padEls.forEach((el, i) => {
+    el.classList.toggle('set', cues[i] != null);
+    el.classList.toggle('sel', selected === i);
+    el.querySelector('.t').textContent = cues[i] == null ? 'empty' : fmt(cues[i]);
+  });
+}
+function save() { try { if (videoId) localStorage.setItem('chop:' + videoId, JSON.stringify(cues)); } catch (e) {} }
+function restore(id) {
+  try { const v = JSON.parse(localStorage.getItem('chop:' + id)); if (Array.isArray(v) && v.length === 10) return v; } catch (e) {}
+  return null;
+}
+function flash(i) {
+  const el = padEls[i]; el.classList.add('hit');
+  clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove('hit'), 140);
+}
+
+function hit(i, setOnly) {
+  if (!player || !player.getCurrentTime) return say('Load a video first');
+  selected = i;
+  if (setOnly || cues[i] == null) {
+    cues[i] = +player.getCurrentTime().toFixed(2);
+    save(); renderPads(); flash(i);
+    return say(`Pad ${LABELS[i]} set to ${fmt(cues[i])}`);
+  }
+  player.seekTo(cues[i], true);
+  player.playVideo();
+  flash(i); renderPads();
+}
+function release(key) {
+  held.delete(key);
+  if ($('gate').checked && held.size === 0 && player && player.pauseVideo) player.pauseVideo();
+}
+function nudge(d) {
+  if (selected == null || cues[selected] == null) return say('Hit a pad first, then nudge it');
+  cues[selected] = Math.max(0, +(cues[selected] + d).toFixed(2));
+  save(); renderPads(); say(`Pad ${LABELS[selected]} → ${fmt(cues[selected])}`);
+}
+function spread() {
+  const d = player && player.getDuration ? player.getDuration() : 0;
+  if (!d) return say('Wait for the video to load, then try again');
+  cues = LABELS.map((_, i) => +(d * ((i + 1) % 10) / 10).toFixed(2)); // 1=10% … 9=90%, 0=start, like YouTube
+  save(); renderPads(); say('Pads set to the 10% marks');
+}
+
+/* ---------- keyboard ---------- */
+window.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' && e.target.type === 'text') return;
+  let i = CODES.indexOf(e.code); if (i < 0) i = NUMPAD.indexOf(e.code);
+  if (i >= 0) {
+    e.preventDefault();
+    if (e.repeat) return;
+    held.add(e.code); hit(i, e.shiftKey); return;
+  }
+  if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+  else if (e.code === 'BracketLeft') { e.preventDefault(); nudge(e.altKey ? -0.01 : -0.05); }
+  else if (e.code === 'BracketRight') { e.preventDefault(); nudge(e.altKey ? 0.01 : 0.05); }
+  else if (e.code === 'Backspace' && selected != null) { e.preventDefault(); cues[selected] = null; save(); renderPads(); }
+});
+window.addEventListener('keyup', e => { if (held.has(e.code)) release(e.code); });
+window.addEventListener('blur', () => { setTimeout(() => { if (document.activeElement && document.activeElement.tagName === 'IFRAME') $('focusBanner').hidden = false; }, 0); });
+window.addEventListener('focus', () => { $('focusBanner').hidden = true; });
+document.addEventListener('pointerdown', () => { $('focusBanner').hidden = true; });
+
+/* ---------- YouTube ---------- */
+function parseId(s) {
+  s = s.trim();
+  const m = s.match(/(?:v=|youtu\.be\/|shorts\/|embed\/|live\/)([A-Za-z0-9_-]{11})/);
+  if (m) return m[1];
+  return /^[A-Za-z0-9_-]{11}$/.test(s) ? s : null;
+}
+function say(t) { $('msg').textContent = t; }
+window.onYouTubeIframeAPIReady = () => { apiReady = true; if (pendingId) loadVideo(pendingId); };
+(function () { const s = document.createElement('script'); s.src = 'https://www.youtube.com/iframe_api'; document.head.appendChild(s); })();
+
+function loadVideo(id) {
+  if (!apiReady) { pendingId = id; return say('Loading the YouTube player…'); }
+  videoId = id; selected = null;
+  const saved = restore(id);
+  cues = saved || Array(10).fill(null);
+  renderPads();
+  $('empty').hidden = true;
+  if (!player) {
+    player = new YT.Player('player', {
+      videoId: id,
+      playerVars: { disablekb: 1, rel: 0, playsinline: 1, modestbranding: 1 },
+      events: {
+        onReady: () => { say(saved ? 'Loaded with your saved cues' : 'Loaded. Press Play, then set pads'); afterLoad(!saved); },
+        onError: e => say(e.data === 101 || e.data === 150 ? 'This video can’t be embedded. Try another upload of it.' : 'YouTube couldn’t play this video'),
+      },
+    });
+  } else {
+    player.cueVideoById(id);
+    say(saved ? 'Loaded with your saved cues' : 'Loaded. Press Play, then set pads');
+    afterLoad(!saved);
+  }
+  try { localStorage.setItem('chop:last', id); } catch (e) {}
+}
+function afterLoad(autoSpread) {
+  if (!autoSpread) return;
+  let tries = 0;
+  const t = setInterval(() => {
+    if (player.getDuration && player.getDuration() > 0) { clearInterval(t); spread(); say('Pads start on the 10% marks. Shift+number to set your own.'); }
+    else if (++tries > 40) clearInterval(t);
+  }, 250);
+}
+function togglePlay() {
+  if (!player || !player.getPlayerState) return;
+  player.getPlayerState() === 1 ? player.pauseVideo() : player.playVideo();
+}
+$('loadForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const id = parseId($('url').value);
+  if (!id) return say('That doesn’t look like a YouTube link');
+  $('url').blur(); loadVideo(id);
+});
+$('playBtn').onclick = togglePlay;
+$('spreadBtn').onclick = spread;
+$('clearBtn').onclick = () => { cues = Array(10).fill(null); selected = null; save(); renderPads(); say('Pads cleared'); };
+$('lock').onchange = e => { $('shield').hidden = !e.target.checked; };
+setInterval(() => {
+  if (player && player.getCurrentTime) $('clock').textContent = fmt(player.getCurrentTime()) + ' / ' + fmt(player.getDuration(), false);
+}, 50);
+
+/* ---------- recording → MP3 ---------- */
+let rec = null, recStream = null, chunks = [], recStart = 0, recTimer = null, takeN = 0;
+$('recBtn').onclick = () => rec && rec.state === 'recording' ? stopRec() : startRec();
+
+async function startRec() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) return say('Recording needs Chrome or Edge on a computer');
+  try {
+    recStream = await navigator.mediaDevices.getDisplayMedia({
+      video: true,
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      preferCurrentTab: true, selfBrowserSurface: 'include', systemAudio: 'include',
+    });
+  } catch (e) { return say('Recording cancelled'); }
+  const audio = recStream.getAudioTracks();
+  if (!audio.length) { recStream.getTracks().forEach(t => t.stop()); return say('No sound captured. Pick “This tab” and turn on “Share tab audio”.'); }
+  recStream.getVideoTracks().forEach(t => t.stop());
+  const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg'].find(m => MediaRecorder.isTypeSupported(m)) || '';
+  rec = new MediaRecorder(new MediaStream(audio), mime ? { mimeType: mime } : undefined);
+  chunks = [];
+  rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+  rec.onstop = encodeTake;
+  audio[0].onended = () => { if (rec && rec.state === 'recording') stopRec(); };
+  rec.start(250);
+  recStart = performance.now();
+  $('recBtn').classList.add('recording'); $('recLabel').textContent = 'Stop';
+  recTimer = setInterval(() => { $('recTime').textContent = fmt((performance.now() - recStart) / 1000, false); }, 200);
+  say('Recording. Play your chop.');
+  window.focus();
+}
+function stopRec() {
+  if (rec && rec.state === 'recording') rec.stop();
+  if (recStream) recStream.getTracks().forEach(t => t.stop());
+  clearInterval(recTimer);
+  $('recBtn').classList.remove('recording'); $('recLabel').textContent = 'Record';
+}
+async function encodeTake() {
+  say('Making MP3…');
+  try {
+    const blob = new Blob(chunks, { type: rec.mimeType });
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const ab = await ctx.decodeAudioData(await blob.arrayBuffer());
+    ctx.close();
+    const ch = Math.min(2, ab.numberOfChannels);
+    const enc = new lamejs.Mp3Encoder(ch, ab.sampleRate, 256);
+    const toI16 = f => { const o = new Int16Array(f.length); for (let i = 0; i < f.length; i++) { const s = Math.max(-1, Math.min(1, f[i])); o[i] = s < 0 ? s * 0x8000 : s * 0x7fff; } return o; };
+    const L = toI16(ab.getChannelData(0)), R = ch > 1 ? toI16(ab.getChannelData(1)) : null;
+    const out = [], BLOCK = 1152;
+    for (let i = 0; i < L.length; i += BLOCK) {
+      const buf = R ? enc.encodeBuffer(L.subarray(i, i + BLOCK), R.subarray(i, i + BLOCK)) : enc.encodeBuffer(L.subarray(i, i + BLOCK));
+      if (buf.length) out.push(new Uint8Array(buf));
+      if (i % (BLOCK * 400) === 0) { say(`Making MP3… ${Math.round(i / L.length * 100)}%`); await new Promise(r => setTimeout(r)); }
+    }
+    const end = enc.flush(); if (end.length) out.push(new Uint8Array(end));
+    addTake(new Blob(out, { type: 'audio/mpeg' }), ab.duration);
+    say('MP3 ready below');
+  } catch (e) {
+    console.error(e); say('Couldn’t make the MP3. Try recording again.');
+  }
+}
+function addTake(blob, dur) {
+  takeN++;
+  const d = new Date(), pad = n => String(n).padStart(2, '0');
+  const name = `chop-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.mp3`;
+  const url = URL.createObjectURL(blob);
+  const el = document.createElement('div'); el.className = 'take';
+  el.innerHTML = `<div class="name"><span>Take ${takeN} · ${fmt(dur, false)}</span><a href="${url}" download="${name}">Download MP3</a></div><audio controls src="${url}"></audio>`;
+  $('takes').prepend(el);
+}
+
+/* ---------- start ---------- */
+renderPads();
+try { const last = localStorage.getItem('chop:last'); if (last) { $('url').value = 'https://youtu.be/' + last; } } catch (e) {}
+</script>
+</body>
+</html>
