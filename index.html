@@ -99,6 +99,10 @@ label.toggle { display: inline-flex; align-items: center; gap: 6px; font-size: .
 .take a { color: var(--amber); font-weight: 600; text-decoration: none; }
 .help { font-size: .85rem; color: var(--dim); margin: 0; padding-left: 18px; display: grid; gap: 4px; }
 kbd { font: .78rem var(--mono); background: var(--body); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; color: var(--ink); }
+.cuebox { width: 100%; min-height: 96px; resize: vertical; background: var(--lcd-bg); color: var(--lcd); border: 1px solid var(--line); border-radius: 6px; padding: 10px; font: 13px/1.5 var(--mono); }
+.pad .lbl { font: 600 .66rem var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--amber); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pad.hit .lbl { color: #1b1a1d; }
+.small { padding: 6px 10px; font-size: .78rem; }
 .banner { background: var(--pad-set); border: 1px solid var(--amber); border-radius: 8px; padding: 10px 12px; font-size: .88rem; }
 </style>
 </head>
@@ -147,6 +151,22 @@ kbd { font: .78rem var(--mono); background: var(--body); border: 1px solid var(-
         <p class="help" style="padding:0;list-style:none">When Chrome asks what to share, pick <b>This tab</b> and turn on <b>Share tab audio</b>. Stop to get an MP3.</p>
         <div class="takes" id="takes"></div>
       </div>
+
+      <div class="card">
+        <h2>Cue list</h2>
+        <textarea class="cuebox" id="cueText" spellcheck="false" placeholder="One pad per line, in order 1–0:&#10;40.19 kick&#10;64.76 snare"></textarea>
+        <div class="row">
+          <button type="button" class="small" id="pasteBtn">Load into pads</button>
+          <button type="button" class="small" id="copyBtn">Show current pads</button>
+        </div>
+        <div class="row">
+          <span style="font-size:.82rem;color:var(--dim)">Shift all pads</span>
+          <button type="button" class="small" data-shift="-0.1">−0.1s</button>
+          <button type="button" class="small" data-shift="-0.01">−0.01s</button>
+          <button type="button" class="small" data-shift="0.01">+0.01s</button>
+          <button type="button" class="small" data-shift="0.1">+0.1s</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -158,6 +178,7 @@ kbd { font: .78rem var(--mono); background: var(--body); border: 1px solid var(-
       <li><kbd>[</kbd> and <kbd>]</kbd> nudge the last pad 0.05s earlier or later. Hold <kbd>Alt</kbd> for 0.01s.</li>
       <li><kbd>Space</kbd> plays or pauses. <kbd>Backspace</kbd> clears the last pad.</li>
       <li>Cues save in this browser for each video, so you can come back to a chop.</li>
+      <li>If every pad lands a little early or late, use <b>Shift all pads</b> to move them together.</li>
     </ul>
   </div>
 </div>
@@ -171,6 +192,7 @@ const $ = id => document.getElementById(id);
 
 let player = null, apiReady = false, videoId = null, pendingId = null;
 let cues = Array(10).fill(null);
+let labels = Array(10).fill('');
 let selected = null;
 const held = new Set();
 
@@ -178,7 +200,7 @@ const held = new Set();
 const padEls = LABELS.map((k, i) => {
   const el = document.createElement('div');
   el.className = 'pad'; el.tabIndex = 0;
-  el.innerHTML = `<span class="key">${k}</span><span class="t">empty</span>`;
+  el.innerHTML = `<span class="key">${k}</span><span><span class="lbl"></span><br><span class="t">empty</span></span>`;
   el.addEventListener('pointerdown', e => { e.preventDefault(); window.focus(); hit(i, e.shiftKey); held.add('p' + i); });
   el.addEventListener('pointerup', () => release('p' + i));
   el.addEventListener('pointerleave', () => { if (held.has('p' + i)) release('p' + i); });
@@ -196,11 +218,16 @@ function renderPads() {
     el.classList.toggle('set', cues[i] != null);
     el.classList.toggle('sel', selected === i);
     el.querySelector('.t').textContent = cues[i] == null ? 'empty' : fmt(cues[i]);
+    el.querySelector('.lbl').textContent = labels[i] || '';
   });
 }
-function save() { try { if (videoId) localStorage.setItem('chop:' + videoId, JSON.stringify(cues)); } catch (e) {} }
+function save() { try { if (videoId) localStorage.setItem('chop:' + videoId, JSON.stringify({ cues, labels })); } catch (e) {} }
 function restore(id) {
-  try { const v = JSON.parse(localStorage.getItem('chop:' + id)); if (Array.isArray(v) && v.length === 10) return v; } catch (e) {}
+  try {
+    const v = JSON.parse(localStorage.getItem('chop:' + id));
+    if (Array.isArray(v) && v.length === 10) return { cues: v, labels: Array(10).fill('') };
+    if (v && Array.isArray(v.cues)) return { cues: v.cues, labels: v.labels || Array(10).fill('') };
+  } catch (e) {}
   return null;
 }
 function flash(i) {
@@ -233,6 +260,7 @@ function spread() {
   const d = player && player.getDuration ? player.getDuration() : 0;
   if (!d) return say('Wait for the video to load, then try again');
   cues = LABELS.map((_, i) => +(d * ((i + 1) % 10) / 10).toFixed(2)); // 1=10% … 9=90%, 0=start, like YouTube
+  labels = Array(10).fill('');
   save(); renderPads(); say('Pads set to the 10% marks');
 }
 
@@ -248,7 +276,7 @@ window.addEventListener('keydown', e => {
   if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
   else if (e.code === 'BracketLeft') { e.preventDefault(); nudge(e.altKey ? -0.01 : -0.05); }
   else if (e.code === 'BracketRight') { e.preventDefault(); nudge(e.altKey ? 0.01 : 0.05); }
-  else if (e.code === 'Backspace' && selected != null) { e.preventDefault(); cues[selected] = null; save(); renderPads(); }
+  else if (e.code === 'Backspace' && selected != null) { e.preventDefault(); cues[selected] = null; labels[selected] = ''; save(); renderPads(); }
 });
 window.addEventListener('keyup', e => { if (held.has(e.code)) release(e.code); });
 window.addEventListener('blur', () => { setTimeout(() => { if (document.activeElement && document.activeElement.tagName === 'IFRAME') $('focusBanner').hidden = false; }, 0); });
@@ -270,7 +298,8 @@ function loadVideo(id) {
   if (!apiReady) { pendingId = id; return say('Loading the YouTube player…'); }
   videoId = id; selected = null;
   const saved = restore(id);
-  cues = saved || Array(10).fill(null);
+  cues = saved ? saved.cues : Array(10).fill(null);
+  labels = saved ? saved.labels : Array(10).fill('');
   renderPads();
   $('empty').hidden = true;
   if (!player) {
@@ -309,11 +338,41 @@ $('loadForm').addEventListener('submit', e => {
 });
 $('playBtn').onclick = togglePlay;
 $('spreadBtn').onclick = spread;
-$('clearBtn').onclick = () => { cues = Array(10).fill(null); selected = null; save(); renderPads(); say('Pads cleared'); };
+$('clearBtn').onclick = () => { cues = Array(10).fill(null); labels = Array(10).fill(''); selected = null; save(); renderPads(); say('Pads cleared'); };
 $('lock').onchange = e => { $('shield').hidden = !e.target.checked; };
 setInterval(() => {
   if (player && player.getCurrentTime) $('clock').textContent = fmt(player.getCurrentTime()) + ' / ' + fmt(player.getDuration(), false);
 }, 50);
+
+/* ---------- cue list ---------- */
+function parseTime(str) {
+  const m = str.match(/^(?:(\d+):)?(\d+(?:\.\d+)?)$/);
+  return m ? (m[1] ? +m[1] * 60 : 0) + +m[2] : null;
+}
+$('pasteBtn').onclick = () => {
+  if (!videoId) return say('Load the video first, then load cues');
+  const lines = $('cueText').value.split(/\n|,/).map(l => l.trim()).filter(Boolean).slice(0, 10);
+  if (!lines.length) return say('Type one time per line, like 40.19 kick');
+  const nc = Array(10).fill(null), nl = Array(10).fill('');
+  for (let i = 0; i < lines.length; i++) {
+    const [first, ...rest] = lines[i].replace(/^(\d|10)\s*[=:.)]\s+/, '').split(/\s+/);
+    const t = parseTime(first);
+    if (t == null) return say(`Line ${i + 1} needs a time first, like 40.19 or 1:05.3`);
+    nc[i] = +t.toFixed(2); nl[i] = rest.join(' ');
+  }
+  cues = nc; labels = nl; selected = null; save(); renderPads();
+  say(`Loaded ${lines.length} pads`);
+};
+$('copyBtn').onclick = () => {
+  $('cueText').value = cues.map((t, i) => t == null ? '' : `${t.toFixed(2)}${labels[i] ? ' ' + labels[i] : ''}`).join('\n').replace(/\n+$/, '');
+  say('Current pads are in the box');
+};
+document.querySelectorAll('[data-shift]').forEach(b => b.onclick = () => {
+  const d = +b.dataset.shift;
+  if (!cues.some(c => c != null)) return say('No pads to shift');
+  cues = cues.map(c => c == null ? null : Math.max(0, +(c + d).toFixed(2)));
+  save(); renderPads(); say(`All pads shifted ${d > 0 ? '+' : ''}${d}s`);
+});
 
 /* ---------- recording → MP3 ---------- */
 let rec = null, recStream = null, chunks = [], recStart = 0, recTimer = null, takeN = 0;
